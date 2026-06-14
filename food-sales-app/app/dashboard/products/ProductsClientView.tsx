@@ -2,7 +2,8 @@
 'use client';
 
 import { useState } from 'react';
-// ✅ التصحيح: استيراد جميع الدوال مباشرة في أعلى الملف
+import { useRouter } from 'next/navigation';
+// ✅ التصحيح: استيراد الدوال مباشرة وباسم الملف الصحيح (بحرف s)
 import { 
   addProductAction, 
   updateProductAction, 
@@ -24,8 +25,14 @@ export default function ProductsClientView({
   initialProducts: Product[],
   initialLocations: Location[]
 }) {
+  const router = useRouter();
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [stockRows, setStockRows] = useState([{ id: 1 }]);
+
+  // ✅ استخدام router.refresh() لتحديث البيانات بدون إعادة تحميل الصفحة بالكامل
+  const refreshPage = () => {
+    router.refresh();
+  };
 
   const addStockRow = () => setStockRows([...stockRows, { id: Date.now() }]);
   
@@ -41,7 +48,7 @@ export default function ProductsClientView({
     if (!result.success) {
       alert(`⚠️ تعذر الحذف:\n${result.error}`);
     } else {
-      window.location.reload();
+      refreshPage();
     }
   };
 
@@ -52,14 +59,16 @@ export default function ProductsClientView({
     <div className="space-y-8 p-6" dir="rtl">
       <h1 className="text-3xl font-bold text-gray-800">إدارة الأصناف والمنتجات</h1>
 
-      {/* نموذج الإضافة */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
         <h2 className="text-xl font-bold text-gray-700 mb-4 flex items-center gap-2">
           <span className="text-2xl">📦</span> إضافة صنف جديد وتوزيعه الأولي
         </h2>
         
-        {/* ✅ التصحيح: استخدام الدالة المستوردة مباشرة بدلاً من import ديناميكي */}
-        <form action={addProductAction} className="space-y-6">
+        {/* ✅ التصحيح: استدعاء الدالة مباشرة */}
+        <form action={async (formData) => {
+          await addProductAction(formData);
+          refreshPage();
+        }} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <input name="name" required placeholder="اسم المنتج" className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
             <input name="barcode" required placeholder="الباركود" className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
@@ -115,7 +124,6 @@ export default function ProductsClientView({
         </form>
       </div>
 
-      {/* جدول المنتجات */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-right">
@@ -171,7 +179,6 @@ export default function ProductsClientView({
         </div>
       </div>
 
-      {/* نافذة التعديل المنبثقة */}
       {editingProduct && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 animate-in fade-in zoom-in duration-200">
@@ -179,7 +186,10 @@ export default function ProductsClientView({
               <h3 className="text-xl font-bold text-gray-800">✏️ تعديل بيانات الصنف</h3>
               <button onClick={() => setEditingProduct(null)} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
             </div>
-            <form action={updateProductAction} className="space-y-4">
+            <form action={async (formData) => {
+              await updateProductAction(formData);
+              refreshPage();
+            }} className="space-y-4">
               <input type="hidden" name="id" value={editingProduct.id} />
               <input name="name" defaultValue={editingProduct.name} required placeholder="اسم المنتج" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
               <input name="barcode" defaultValue={editingProduct.barcode} required placeholder="الباركود" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
