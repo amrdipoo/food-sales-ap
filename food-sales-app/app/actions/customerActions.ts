@@ -1,41 +1,36 @@
 // app/actions/customerActions.ts
 'use server';
 
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
-import { revalidatePath } from 'next/cache';
+// app/actions/customerActions.ts
+'use server';
 
-async function getSupabaseClient() {
-  const cookieStore = await cookies();
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) { return cookieStore.get(name)?.value; },
-        set(name: string, value: string, options: any) {
-          try { cookieStore.set({ name, value, ...options }); } catch (e) {}
-        },
-        remove(name: string, options: any) {
-          try { cookieStore.set({ name, value: '', ...options }); } catch (e) {}
-        },
-      },
-    }
-  );
-}
+import { getServerSupabaseClient } from '@/lib/supabase';
+import { validateRequired } from '@/lib/utils';
+import { revalidatePath } from 'next/cache';
+import { getUserRole } from './authActions';
+
+// ... باقي الكود
 
 export async function addCustomerAction(formData: FormData) {
-  const supabase = await getSupabaseClient();
-  
+  const supabase = await getServerSupabaseClient();
+  const role = await getUserRole();
+  if (role !== 'admin' && role !== 'store_manager') {
+    return { success: false, error: 'غير مصرح' };
+  }
+
   const name = formData.get('name') as string;
   const phone = formData.get('phone') as string;
   const address = formData.get('address') as string;
+
+  const missing = validateRequired(name, 'الاسم');
+  if (missing) return { success: false, error: missing };
 
   const { error } = await supabase
     .from('customers')
     .insert({ name, phone, address, current_balance: 0, is_active: true });
 
   if (error) {
+    console.error('❌ خطأ في إضافة العميل:', error);
     return { success: false, error: error.message };
   }
 
@@ -44,14 +39,19 @@ export async function addCustomerAction(formData: FormData) {
 }
 
 export async function toggleCustomerStatusAction(customerId: string, currentStatus: boolean) {
-  const supabase = await getSupabaseClient();
-  
+  const supabase = await getServerSupabaseClient();
+  const role = await getUserRole();
+  if (role !== 'admin' && role !== 'store_manager') {
+    return { success: false, error: 'غير مصرح' };
+  }
+
   const { error } = await supabase
     .from('customers')
     .update({ is_active: !currentStatus })
     .eq('id', customerId);
 
   if (error) {
+    console.error('❌ خطأ في تغيير حالة العميل:', error);
     return { success: false, error: error.message };
   }
 

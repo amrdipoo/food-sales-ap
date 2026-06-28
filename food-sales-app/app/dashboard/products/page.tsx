@@ -1,10 +1,10 @@
 // app/dashboard/products/page.tsx
+import { checkAccess } from '../../actions/authActions';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
-import { addProductAction, updateProductAction, deleteProductAction, toggleProductStatusAction } from '../../actions/productActions';
 import ProductsClientView from './ProductsClientView';
-
-// 1. Server Component: مسؤول عن جلب البيانات بأمان وسرعة
+export const dynamic = 'force-dynamic';
+// ✅ دالة جلب المنتجات
 async function getProductsData() {
   const cookieStore = await cookies();
   const supabase = createServerClient(
@@ -21,9 +21,14 @@ async function getProductsData() {
     `)
     .order('created_at', { ascending: false });
 
-  return error ? [] : (products || []);
+  if (error) {
+    console.error('❌ خطأ في جلب المنتجات:', error);
+    return [];
+  }
+  return products || [];
 }
 
+// ✅ دالة جلب المواقع
 async function getLocations() {
   const cookieStore = await cookies();
   const supabase = createServerClient(
@@ -32,24 +37,32 @@ async function getLocations() {
     { cookies: { get: (name: string) => cookieStore.get(name)?.value } }
   );
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('locations')
     .select('id, name, type')
     .eq('is_active', true)
     .order('type', { ascending: true });
 
+  if (error) {
+    console.error('❌ خطأ في جلب المواقع:', error);
+    return [];
+  }
   return data || [];
 }
 
-// المكون الرئيسي (Server Component)
+// ✅ التصدير الوحيد (الافتراضي)
 export default async function ProductsPage() {
+  // تحقق من الصلاحية
+  await checkAccess('/dashboard/products');
+
+  // جلب البيانات
   const initialProducts = await getProductsData();
   const initialLocations = await getLocations();
 
   return (
-    <ProductsClientView 
-      initialProducts={initialProducts} 
-      initialLocations={initialLocations} 
+    <ProductsClientView
+      initialProducts={initialProducts}
+      initialLocations={initialLocations}
     />
   );
 }

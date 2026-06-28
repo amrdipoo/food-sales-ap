@@ -1,67 +1,124 @@
 // app/dashboard/stock-transfer/page.tsx
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+'use client';
+
+import { useState, useEffect } from 'react';
 import { transferStockAction } from '../../actions/stockActions';
+import { useRouter } from 'next/navigation';
 
-async function getTransferData() {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: { get: (name: string) => cookieStore.get(name)?.value } }
-  );
-
-  // جلب المواقع (المخازن والسيارات)
-  const { data: locations } = await supabase
-    .from('locations')
-    .select('id, name, type')
-    .eq('is_active', true)
-    .order('type', { ascending: true });
-
-  // جلب المنتجات النشطة
-  const { data: products } = await supabase
-    .from('products')
-    .select('id, name, barcode')
-    .eq('is_active', true)
-    .order('name', { ascending: true });
-
-  // جلب آخر 10 حركات تحويل
-  const { data: movements } = await supabase
-    .from('stock_movements')
-    .select(`
-      id,
-      quantity,
-      movement_type,
-      notes,
-      created_at,
-      products (name),
-      from_locations:locations!stock_movements_from_location_id_fkey (name),
-      to_locations:locations!stock_movements_to_location_id_fkey (name)
-    `)
-    .order('created_at', { ascending: false })
-    .limit(10);
-
-  return {
-    locations: locations || [],
-    products: products || [],
-    movements: movements || []
-  };
+export const dynamic = 'force-dynamic';
+// تعريف الأنواع
+interface Location {
+  id: string;
+  name: string;
+  type: string;
 }
 
-export default async function StockTransferPage() {
-  const { locations, products, movements } = await getTransferData();
+interface Product {
+  id: string;
+  name: string;
+  barcode: string;
+}
+
+interface Movement {
+  id: string;
+  quantity: number;
+  movement_type: string;
+  notes: string | null;
+  created_at: string;
+  products: { name: string } | null;
+  from_locations: { name: string } | null;
+  to_locations: { name: string } | null;
+}
+
+export default function StockTransferPage() {
+  const router = useRouter();
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [movements, setMovements] = useState<Movement[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // تحميل البيانات
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        // ✅ استخدام API بدلاً من Server Actions
+        const response = await fetch('/api/stock-transfer-data');
+        if (response.ok) {
+          const data = await response.json();
+          setLocations(data.locations || []);
+          setProducts(data.products || []);
+          setMovements(data.movements || []);
+        }
+      } catch (error) {
+        console.error('خطأ في تحميل البيانات:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }, []);
+
+  // ✅ دالة معالجة التحويل
+  const handleTransfer = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setMessage(null);
+
+    const formData = new FormData(e.currentTarget);
+    const result = await transferStockAction(formData);
+
+    if (result.success) {
+      setMessage({ type: 'success', text: '✅ تم تحويل المخزون بنجاح' });
+      // إعادة تحميل البيانات
+      try {
+        const response = await fetch('/api/stock-transfer-data');
+        if (response.ok) {
+          const data = await response.json();
+          setLocations(data.locations || []);
+          setProducts(data.products || []);
+          setMovements(data.movements || []);
+        }
+      } catch (error) {
+        console.error('خطأ في إعادة تحميل البيانات:', error);
+      }
+      e.currentTarget.reset();
+    } else {
+      setMessage({ type: 'error', text: result.error || '❌ فشل تحويل المخزون' });
+    }
+    setIsSubmitting(false);
+  };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('ar-EG', { 
-      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+    return new Date(dateString).toLocaleDateString('ar-EG', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   };
 
-  return (
-    <div className="space-y-8" dir="rtl">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-gray-800">تحويل المخزون</h1>
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-600 border-t-transparent"></div>
       </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8 p-6" dir="rtl">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold text-gray-800">🔄 تحويل المخزون</h1>
+      </div>
+
+      {message && (
+        <div className={`p-4 rounded-lg ${message.type === 'success' ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-red-100 text-red-800 border border-red-300'}`}>
+          {message.text}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* نموذج التحويل */}
@@ -70,8 +127,8 @@ export default async function StockTransferPage() {
             <h2 className="text-xl font-bold text-gray-700 mb-4 flex items-center gap-2">
               <span className="text-2xl">🔄</span> نقل بضاعة جديد
             </h2>
-            
-            <form action={transferStockAction} className="space-y-4">
+
+            <form onSubmit={handleTransfer} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">من الموقع (المصدر)</label>
                 <select name="from_location_id" required className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white">
@@ -128,14 +185,24 @@ export default async function StockTransferPage() {
                   rows={2}
                   placeholder="سبب التحويل، اسم السائق، إلخ..."
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                ></textarea>
+                />
               </div>
 
               <button
                 type="submit"
-                className="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 text-lg"
+                disabled={isSubmitting}
+                className="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors flex items-center justify-center gap-2 text-lg"
               >
-                <span>📦 تنفيذ التحويل</span>
+                {isSubmitting ? (
+                  <>
+                    <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
+                    جاري التنفيذ...
+                  </>
+                ) : (
+                  <>
+                    <span>📦</span> تنفيذ التحويل
+                  </>
+                )}
               </button>
             </form>
           </div>

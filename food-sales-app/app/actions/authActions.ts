@@ -1,79 +1,55 @@
 // app/actions/authActions.ts
 'use server';
 
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { getServerSupabaseClient } from '@/lib/supabase';
 import { redirect } from 'next/navigation';
 
-export async function loginAction(formData: FormData) {
-  const email = formData.get('email') as string;
-  const password = formData.get('password') as string;
+export type UserRole = 'admin' | 'store_manager' | 'sales_rep';
 
-  // ✅ إضافة await هنا لأن cookies() أصبحت دالة غير متزامنة في Next.js 15+
-  const cookieStore = await cookies();
+const PERMISSIONS: Record<string, UserRole[]> = {
+  '/dashboard': ['admin', 'store_manager', 'sales_rep'],
+  '/dashboard/payments': ['admin', 'store_manager', 'sales_rep'],
+  '/dashboard/collections': ['admin', 'store_manager', 'sales_rep'],
+  '/dashboard/invoices': ['admin', 'store_manager', 'sales_rep'],
+  '/dashboard/customers': ['admin', 'store_manager', 'sales_rep'],
+  '/dashboard/products': ['admin', 'store_manager'],
+  '/dashboard/locations': ['admin', 'store_manager'],
+  '/dashboard/stock-transfer': ['admin', 'store_manager'],
+  '/dashboard/users': ['admin'],
+  '/dashboard/reports': ['admin', 'store_manager'],
+  '/pos': ['admin', 'store_manager', 'sales_rep'],
+};
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-        set(name: string, value: string, options: any) {
-          try {
-            cookieStore.set({ name, value, ...options });
-          } catch (error) {
-            // يتم تجاهل هذا الخطأ إذا تم الاستدعاء من Server Component
-          }
-        },
-        remove(name: string, options: any) {
-          try {
-            cookieStore.set({ name, value: '', ...options });
-          } catch (error) {
-            // يتم تجاهل هذا الخطأ إذا تم الاستدعاء من Server Component
-          }
-        },
-      },
-    }
-  );
+export async function getUserRole(): Promise<UserRole | null> {
+  const supabase = await getServerSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
 
-  const { error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+  const { data: userData, error } = await supabase
+    .from('users')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle();
 
-  if (error) {
-    return { success: false, error: error.message };
+  if (error || !userData) return null;
+  return (userData.role as UserRole) || null;
+}
+
+export async function checkAccess(pathname: string) {
+  const role = await getUserRole();
+  if (!role) redirect('/login');
+
+  const matchedPath = Object.keys(PERMISSIONS)
+    .filter(p => pathname.startsWith(p))
+    .sort((a, b) => b.length - a.length)[0];
+
+  if (matchedPath && !PERMISSIONS[matchedPath].includes(role)) {
+    redirect('/dashboard?error=no_permission');
   }
-
-  // إعادة التوجيه مباشرة من الخادم بعد نجاح تسجيل الدخول
-  redirect('/dashboard');
 }
 
 export async function logoutAction() {
-  // ✅ إضافة await هنا أيضاً
-  const cookieStore = await cookies();
-  
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-        set(name: string, value: string, options: any) {
-          cookieStore.set({ name, value, ...options });
-        },
-        remove(name: string, options: any) {
-          cookieStore.set({ name, value: '', ...options });
-        },
-      },
-    }
-  );
-
+  const supabase = await getServerSupabaseClient();
   await supabase.auth.signOut();
-  
   redirect('/login');
 }

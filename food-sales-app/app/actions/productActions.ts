@@ -1,120 +1,105 @@
 // app/actions/productActions.ts
 'use server';
 
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { getServerSupabaseClient } from '@/lib/supabase';
+import { parseNumber, validateRequired } from '@/lib/utils';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-
-async function getSupabaseClient() {
-  const cookieStore = await cookies();
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) { return cookieStore.get(name)?.value; },
-        set(name: string, value: string, options: any) {
-          try { cookieStore.set({ name, value, ...options }); } catch (e) {}
-        },
-        remove(name: string, options: any) {
-          try { cookieStore.set({ name, value: '', ...options }); } catch (e) {}
-        },
-      },
-    }
-  );
-}
+import { getUserRole } from './authActions';
 
 export async function addProductAction(formData: FormData) {
-  const supabase = await getSupabaseClient();
-  
+  const supabase = await getServerSupabaseClient();
+  const role = await getUserRole();
+  if (role !== 'admin' && role !== 'store_manager') {
+    return { success: false, error: 'غير مصرح' };
+  }
+
   const name = formData.get('name') as string;
   const category = formData.get('category') as string;
   const barcode = formData.get('barcode') as string;
   const unit_type = formData.get('unit_type') as string;
-  const cost_price = parseFloat(formData.get('cost_price') as string) || 0;
-  const unit_price = parseFloat(formData.get('unit_price') as string) || 0;
+  const cost_price = parseNumber(formData.get('cost_price'));
+  const unit_price = parseNumber(formData.get('unit_price'));
 
-  if (!name || !barcode || unit_price <= 0) {
-    return { success: false, error: 'يرجى إدخال اسم المنتج، الباركود، وسعر البيع بشكل صحيح' };
-  }
+  const missing = validateRequired(name, 'الاسم') ||
+                  validateRequired(barcode, 'الباركود') ||
+                  (unit_price <= 0 ? 'سعر البيع يجب أن يكون أكبر من صفر' : null);
+  if (missing) return { success: false, error: missing };
 
-  // 1. إضافة المنتج
-  const { data: newProduct, error: productError } = await supabase
-    .from('products')
-    .insert({ name, category, barcode, unit_type, cost_price, unit_price, is_active: true })
-    .select('id')
-    .single();
+  try {
+    const { data: newProduct, error: productError } = await supabase
+      .from('products')
+      .insert({ name, category, barcode, unit_type, cost_price, unit_price, is_active: true })
+      .select('id')
+      .single();
 
-  if (productError || !newProduct) {
-    return { success: false, error: productError?.message || 'فشل في إضافة المنتج' };
-  }
+    if (productError) throw new Error(productError.message);
+    if (!newProduct) throw new Error('فشل إضافة المنتج');
 
-  // 2. ✅ قراءة جميع المواقع والكميات كمصفوفات
-  const locationIds = formData.getAll('location_id') as string[];
-  const quantities = formData.getAll('quantity') as string[];
+    const locationIds = formData.getAll('location_id') as string[];
+    const quantities = formData.getAll('quantity') as string[];
+    const inventoryInserts = [];
 
-  console.log('📍 المواقع المختارة:', locationIds);
-  console.log('📦 الكميات:', quantities);
-
-  // 3. ✅ بناء سجلات المخزون
-  const inventoryInserts = [];
-  for (let i = 0; i < locationIds.length; i++) {
-    const locId = locationIds[i];
-    const qty = parseFloat(quantities[i]);
-    
-    if (locId && qty > 0) {
-      inventoryInserts.push({
-        product_id: newProduct.id,
-        location_id: locId,
-        quantity: qty
-      });
+    for (let i = 0; i < locationIds.length; i++) {
+      const locId = locationIds[i];
+      const qty = parseNumber(quantities[i]);
+      if (locId && qty > 0) {
+        inventoryInserts.push({
+          product_id: newProduct.id,
+          location_id: locId,
+          quantity: qty,
+        });
+      }
     }
-  }
 
-  // 4. ✅ إدراج سجلات المخزون
-  if (inventoryInserts.length > 0) {
-    console.log('📝 إدراج المخزون:', inventoryInserts);
-    const { error: inventoryError } = await supabase
-      .from('inventory')
-      .insert(inventoryInserts);
+    if (inventoryInserts.length > 0) {
+      const { error: inventoryError } = await supabase
+        .from('inventory')
+        .insert(inventoryInserts);
 
-    if (inventoryError) {
-      console.error('❌ فشل في إضافة المخزون:', inventoryError.message);
-    } else {
-      console.log('✅ تم إضافة المخزون بنجاح');
+      if (inventoryError) throw new Error('فشل إضافة المخزون: ' + inventoryError.message);
     }
-  }
 
-  revalidatePath('/dashboard/products');
-  redirect('/dashboard/products');
+    revalidatePath('/dashboard/products');
+    redirect('/dashboard/products');
+  } catch (error: any) {
+    console.error('❌ خطأ في إضافة المنتج:', error);
+    return { success: false, error: error.message };
+  }
 }
 
 export async function toggleProductStatusAction(productId: string, currentStatus: boolean) {
-  const supabase = await getSupabaseClient();
+  const supabase = await getServerSupabaseClient();
+  const role = await getUserRole();
+  if (role !== 'admin' && role !== 'store_manager') {
+    return { success: false, error: 'غير مصرح' };
+  }
+
   const { error } = await supabase
     .from('products')
     .update({ is_active: !currentStatus })
     .eq('id', productId);
 
   if (error) return { success: false, error: error.message };
-  
+
   revalidatePath('/dashboard/products');
   redirect('/dashboard/products');
 }
-// app/actions/productActions.ts
 
-// ✅ دالة تحديث بيانات المنتج
 export async function updateProductAction(formData: FormData) {
-  const supabase = await getSupabaseClient();
-  
+  const supabase = await getServerSupabaseClient();
+  const role = await getUserRole();
+  if (role !== 'admin' && role !== 'store_manager') {
+    return { success: false, error: 'غير مصرح' };
+  }
+
   const id = formData.get('id') as string;
   const name = formData.get('name') as string;
   const category = formData.get('category') as string;
   const barcode = formData.get('barcode') as string;
   const unit_type = formData.get('unit_type') as string;
-  const cost_price = parseFloat(formData.get('cost_price') as string) || 0;
-  const unit_price = parseFloat(formData.get('unit_price') as string) || 0;
+  const cost_price = parseNumber(formData.get('cost_price'));
+  const unit_price = parseNumber(formData.get('unit_price'));
 
   const { error } = await supabase
     .from('products')
@@ -122,49 +107,44 @@ export async function updateProductAction(formData: FormData) {
     .eq('id', id);
 
   if (error) return { success: false, error: error.message };
-  
+
   revalidatePath('/dashboard/products');
   redirect('/dashboard/products');
 }
 
-// ✅ دالة حذف المنتج مع التحقق من الحركات
 export async function deleteProductAction(formData: FormData) {
-  const supabase = await getSupabaseClient();
+  const supabase = await getServerSupabaseClient();
+  const role = await getUserRole();
+  if (role !== 'admin' && role !== 'store_manager') {
+    return { success: false, error: 'غير مصرح' };
+  }
+
   const productId = formData.get('productId') as string;
+  if (!productId) return { success: false, error: 'معرف المنتج مطلوب' };
 
-  // 1️⃣ التحقق من الفواتير
-  const { count: invoiceCount } = await supabase
-    .from('invoice_items')
-    .select('*', { count: 'exact', head: true })
-    .eq('product_id', productId);
-  if (invoiceCount && invoiceCount > 0) {
-    return { success: false, error: '🚫 لا يمكن الحذف: الصنف تم بيعه في فواتير سابقة.' };
-  }
-
-  // 2️⃣ التحقق من حركات المخزون
-  const { count: movementCount } = await supabase
-    .from('stock_movements')
-    .select('*', { count: 'exact', head: true })
-    .eq('product_id', productId);
-  if (movementCount && movementCount > 0) {
-    return { success: false, error: '🚫 لا يمكن الحذف: الصنف له حركات تحويل أو إضافة سابقة.' };
-  }
-
-  // 3️⃣ التحقق من المخزون الحالي
-  const { data: inventoryData } = await supabase
+  const { data: inventory, error: invError } = await supabase
     .from('inventory')
     .select('quantity')
     .eq('product_id', productId);
-  
-  const totalStock = inventoryData?.reduce((sum, item) => sum + Number(item.quantity || 0), 0) || 0;
-  if (totalStock > 0) {
-    return { success: false, error: `🚫 لا يمكن الحذف: يوجد مخزون متبقي (${totalStock}). يرجى تصفير المخزون أولاً عبر شاشة التحويل.` };
+
+  if (invError) return { success: false, error: invError.message };
+
+  const totalQuantity = inventory?.reduce((sum, item) => sum + Number(item.quantity || 0), 0) || 0;
+
+  if (totalQuantity > 0) {
+    return {
+      success: false,
+      error: `⛔ لا يمكن حذف هذا الصنف لوجود مخزون متبقي (${totalQuantity}). يرجى جرد أو تحويل المخزون أولاً.`,
+    };
   }
 
-  // ✅ إذا عبر جميع الفحوصات، نحذفه
-  const { error } = await supabase.from('products').delete().eq('id', productId);
+  const { error } = await supabase
+    .from('products')
+    .delete()
+    .eq('id', productId);
+
   if (error) return { success: false, error: error.message };
 
   revalidatePath('/dashboard/products');
-  redirect('/dashboard/products');
+  return { success: true };
 }

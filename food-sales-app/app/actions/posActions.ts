@@ -1,33 +1,34 @@
 // app/actions/posActions.ts
 'use server';
 
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { getServerSupabaseClient } from '@/lib/supabase';
+import { getCurrentUserAction } from './userActions';
+
+export async function getPosInitialData() {
+  const supabase = await getServerSupabaseClient();
+
+  const [userData, customersRes, locationsRes] = await Promise.all([
+    getCurrentUserAction(),
+    supabase.from('customers').select('id, name, phone').eq('is_active', true).order('name'),
+    supabase.from('locations').select('id, name, type').eq('is_active', true).order('name'),
+  ]);
+
+  const { data: { user } } = await supabase.auth.getUser();
+
+  return {
+    user: userData || { id: user?.id, full_name: user?.email || 'مستخدم', role: 'user' },
+    customers: customersRes.data || [],
+    locations: locationsRes.data || [],
+  };
+}
 
 export async function getActiveLocations() {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-      },
-    }
-  );
-
+  const supabase = await getServerSupabaseClient();
   const { data, error } = await supabase
     .from('locations')
     .select('id, name, type')
     .eq('is_active', true)
-    .order('type', { ascending: true });
+    .order('name');
 
-  if (error) {
-    console.error('خطأ في جلب المواقع:', error);
-    return [];
-  }
-
-  return data || [];
+  return error ? [] : (data || []);
 }
