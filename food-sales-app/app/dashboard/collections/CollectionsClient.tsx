@@ -2,9 +2,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import {
-  getActiveCustomers,
   getCollectionsList,
   createCollectionAction,
   deleteCollectionAction,
@@ -12,19 +10,18 @@ import {
 } from '../../actions/collectionActions';
 
 interface CollectionsClientProps {
-  customers: any[];
-  currentUser: any;
-  collections: any[];
-  pendingInvoices: any[];
+  customers?: any[];
+  currentUser?: any;
+  collections?: any[];
+  pendingInvoices?: any[];
 }
 
 export default function CollectionsClient({
-  customers,
-  currentUser,
-  collections: initialCollections,
-  pendingInvoices: initialPendingInvoices,
+  customers = [],
+  currentUser = null,
+  collections: initialCollections = [],
+  pendingInvoices: initialPendingInvoices = [],
 }: CollectionsClientProps) {
-  const router = useRouter();
   const [collections, setCollections] = useState(initialCollections);
   const [allPendingInvoices, setAllPendingInvoices] = useState(initialPendingInvoices);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -36,6 +33,9 @@ export default function CollectionsClient({
   const [amount, setAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [notes, setNotes] = useState('');
+
+  // ✅ تأكد من أن `customers` هي مصفوفة
+  const safeCustomers = Array.isArray(customers) ? customers : [];
 
   const handleCustomerChange = (customerId: string) => {
     setSelectedCustomerId(customerId);
@@ -127,7 +127,7 @@ export default function CollectionsClient({
   return (
     <div className="min-h-screen bg-gray-50 p-6" dir="rtl">
       <div className="max-w-7xl mx-auto space-y-6">
-        <div className="bg-blue-600 text-white p-6 rounded-xl shadow-md">
+        <div className="bg-gradient-to-l from-blue-600 to-blue-700 text-white p-6 rounded-xl shadow-md">
           <h1 className="text-3xl font-bold">سندات القبض</h1>
           <p className="text-blue-100 mt-1">إدارة سندات القبض وتحصيل الفواتير الآجلة</p>
         </div>
@@ -150,7 +150,7 @@ export default function CollectionsClient({
                 required
               >
                 <option value="">-- اختر العميل --</option>
-                {customers.map((c: any) => (
+                {safeCustomers.map((c: any) => (
                   <option key={c.id} value={c.id}>
                     {c.name} {c.phone ? `(${c.phone})` : ''}
                   </option>
