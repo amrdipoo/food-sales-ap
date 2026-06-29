@@ -3,21 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { getRepTrackingData } from '../../actions/trackingActions';
-import MapComponent from '../tracking-map';
-
-interface TrackingPoint {
-  id: string;
-  rep_id: string;
-  latitude: number;
-  longitude: number;
-  accuracy: number;
-  action_type: string;
-  created_at: string;
-  user?: {
-    full_name: string;
-    email: string;
-  };
-}
+import MapComponent, { TrackingPoint } from '../tracking-map'; // ✅ استيراد النوع من المكون
 
 export default function TrackingPage() {
   const [trackingData, setTrackingData] = useState<TrackingPoint[]>([]);
@@ -28,6 +14,7 @@ export default function TrackingPage() {
     const loadData = async () => {
       try {
         const data = await getRepTrackingData();
+        // ✅ التأكد من أن البيانات مطابقة للنوع (يمكن إضافة تحويل إذا لزم الأمر)
         setTrackingData(data);
       } catch (err: any) {
         console.error('خطأ في جلب بيانات التتبع:', err);

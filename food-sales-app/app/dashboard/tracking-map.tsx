@@ -1,12 +1,12 @@
 // app/dashboard/tracking-map.tsx
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, ZoomControl, ScaleControl, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-// أيقونات Leaflet
+// ✅ أيقونات Leaflet
 const defaultIcon = new L.Icon({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
@@ -19,7 +19,27 @@ const defaultIcon = new L.Icon({
 
 L.Marker.prototype.options.icon = defaultIcon;
 
-// ✅ مكوّن فرعي لتكبير الخريطة تلقائياً لتناسب النقاط
+// ✅ تعريف النوع مع user اختياري
+export interface TrackingPoint {
+  id: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  action_type: string;
+  created_at: string;
+  user?: {
+    full_name: string;
+    email: string;
+  };
+}
+
+interface MapComponentProps {
+  points?: TrackingPoint[];
+  center?: [number, number];
+  zoom?: number;
+}
+
+// ✅ مكوّن فرعي لتكبير الخريطة
 function FitBounds({ points }: { points: TrackingPoint[] }) {
   const map = useMap();
   useEffect(() => {
@@ -29,22 +49,6 @@ function FitBounds({ points }: { points: TrackingPoint[] }) {
     }
   }, [points, map]);
   return null;
-}
-
-interface TrackingPoint {
-  id: string;
-  latitude: number;
-  longitude: number;
-  accuracy: number;
-  action_type: string;
-  created_at: string;
-  user: { full_name: string; email: string };
-}
-
-interface MapComponentProps {
-  points?: TrackingPoint[];
-  center?: [number, number];
-  zoom?: number;
 }
 
 const MAP_STYLES = {
@@ -91,7 +95,6 @@ export default function MapComponent({
     );
   }
 
-  // ✅ إذا لم توجد نقاط، استخدم المركز الافتراضي
   const mapCenter: [number, number] = safePoints.length > 0
     ? [safePoints[0].latitude, safePoints[0].longitude]
     : center;
@@ -127,11 +130,7 @@ export default function MapComponent({
         style={{ height: '100%', width: '100%' }}
         zoomControl={false}
       >
-        {/* ✅ الطبقة الأساسية */}
-        <TileLayer
-          attribution={currentStyle.attribution}
-          url={currentStyle.url}
-        />
+        <TileLayer attribution={currentStyle.attribution} url={currentStyle.url} />
 
         {activeStyle === 'osm' && (
           <TileLayer
@@ -144,7 +143,6 @@ export default function MapComponent({
         <ZoomControl position="bottomright" />
         <ScaleControl position="bottomleft" metric={true} imperial={false} />
 
-        {/* ✅ تكبير الخريطة لتشمل جميع النقاط */}
         {safePoints.length > 0 && <FitBounds points={safePoints} />}
 
         {safePoints.map((point) => (
