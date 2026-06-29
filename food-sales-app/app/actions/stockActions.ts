@@ -1,11 +1,9 @@
 // app/actions/stockActions.ts
 'use server';
 
-
 import { getServerSupabaseClient } from '@/lib/supabase';
-import { parseNumber, validateRequired } from '@/lib/utils';
+import { parseNumber, validateRequired } from '@/lib/utils'; // ✅ استيراد من utils
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
 import { getUserRole } from './authActions';
 
 export async function transferStockAction(formData: FormData) {
@@ -32,6 +30,7 @@ export async function transferStockAction(formData: FormData) {
   }
 
   try {
+    // التحقق من المخزون المصدر
     const { data: sourceInventory, error: sourceError } = await supabase
       .from('inventory')
       .select('quantity')
@@ -47,6 +46,7 @@ export async function transferStockAction(formData: FormData) {
       throw new Error(`الكمية غير كافية (المتاح: ${sourceInventory.quantity})`);
     }
 
+    // خصم من المصدر
     const { error: deductError } = await supabase
       .from('inventory')
       .update({ quantity: sourceInventory.quantity - quantity })
@@ -55,6 +55,7 @@ export async function transferStockAction(formData: FormData) {
 
     if (deductError) throw new Error('فشل خصم الكمية: ' + deductError.message);
 
+    // إضافة للوجهة
     const { data: destInventory } = await supabase
       .from('inventory')
       .select('quantity')
@@ -73,23 +74,19 @@ export async function transferStockAction(formData: FormData) {
 
     if (upsertError) throw new Error('فشل إضافة الكمية للوجهة: ' + upsertError.message);
 
-    const { error: logError } = await supabase
-      .from('stock_movements')
-      .insert({
-        product_id: productId,
-        from_location_id: fromLocationId,
-        to_location_id: toLocationId,
-        quantity,
-        movement_type: 'transfer_to_vehicle',
-        notes: notes || null,
-      });
-
-    if (logError) {
-      console.warn('⚠️ فشل تسجيل الحركة (لكن التحويل تم):', logError.message);
-    }
+    // تسجيل الحركة
+    await supabase.from('stock_movements').insert({
+      product_id: productId,
+      from_location_id: fromLocationId,
+      to_location_id: toLocationId,
+      quantity,
+      movement_type: 'transfer',
+      notes: notes || null,
+    });
 
     revalidatePath('/dashboard/stock-transfer');
-    redirect('/dashboard/stock-transfer?success=true');
+    return { success: true, message: 'تم تحويل المخزون بنجاح' };
+
   } catch (error: any) {
     console.error('💥 خطأ في التحويل:', error);
     return { success: false, error: error.message };

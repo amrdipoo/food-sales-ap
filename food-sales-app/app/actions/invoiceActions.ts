@@ -291,35 +291,50 @@ export async function updateInvoiceAction(formData: FormData) {
 /**
  * جلب قائمة الفواتير مع تفاصيل العملاء والمندوبين
  */
+// app/actions/invoiceActions.ts (الجزء المُعدّل)
+/**
+ * جلب قائمة الفواتير مع تفاصيل العملاء والمندوبين
+ */
 export async function getInvoicesList() {
-  const supabase = await getServerSupabaseClient();
+  try {
+    const supabase = await getServerSupabaseClient();
 
-  const { data: invoices, error } = await supabase
-    .from('invoices')
-    .select(`
-      id,
-      invoice_number,
-      total_amount,
-      paid_amount,
-      discount,
-      status,
-      customer_id,
-      sales_rep_id,
-      created_at,
-      customers (id, name, phone),
-      users!invoices_sales_rep_id_fkey (id, full_name)
-    `)
-    .order('created_at', { ascending: false });
+    // ✅ استعلام مبسط مع العلاقات الصحيحة
+    const { data: invoices, error } = await supabase
+      .from('invoices')
+      .select(`
+        id,
+        invoice_number,
+        total_amount,
+        paid_amount,
+        discount,
+        status,
+        customer_id,
+        sales_rep_id,
+        created_at,
+        customers!inner (id, name, phone),
+        users!invoices_sales_rep_id_fkey (id, full_name)
+      `)
+      .order('created_at', { ascending: false });
 
-  if (error || !invoices) {
-    console.error('❌ خطأ في جلب الفواتير:', error);
+    if (error) {
+      console.error('❌ خطأ في جلب الفواتير:', error);
+      return [];
+    }
+
+    if (!invoices || invoices.length === 0) {
+      console.log('📭 لا توجد فواتير مسجلة');
+      return [];
+    }
+
+    return invoices.map((inv: any) => ({
+      ...inv,
+      customer: inv.customers || { name: 'عميل نقدي', phone: null },
+      sales_rep: inv.users || { full_name: 'غير معروف' },
+      remaining: Math.max(0, Number(inv.total_amount || 0) - Number(inv.paid_amount || 0)),
+    }));
+  } catch (err) {
+    console.error('💥 خطأ غير متوقع في getInvoicesList:', err);
     return [];
   }
-
-  return invoices.map((inv: any) => ({
-    ...inv,
-    customer: inv.customers || { name: 'عميل نقدي' },
-    sales_rep: inv.users || { full_name: 'غير معروف' },
-    remaining: Number(inv.total_amount || 0) - Number(inv.paid_amount || 0),
-  }));
 }

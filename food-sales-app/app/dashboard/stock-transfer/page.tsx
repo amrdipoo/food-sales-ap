@@ -1,12 +1,10 @@
 // app/dashboard/stock-transfer/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
-import { transferStockAction } from '../../actions/stockActions';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { transferStockAction } from '../../actions/stockActions';
 
-export const dynamic = 'force-dynamic';
-// تعريف الأنواع
 interface Location {
   id: string;
   name: string;
@@ -22,13 +20,14 @@ interface Product {
 interface Movement {
   id: string;
   quantity: number;
-  movement_type: string;
   notes: string | null;
   created_at: string;
   products: { name: string } | null;
   from_locations: { name: string } | null;
   to_locations: { name: string } | null;
 }
+
+export const dynamic = 'force-dynamic';
 
 export default function StockTransferPage() {
   const router = useRouter();
@@ -39,56 +38,61 @@ export default function StockTransferPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // تحميل البيانات
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        // ✅ استخدام API بدلاً من Server Actions
-        const response = await fetch('/api/stock-transfer-data');
-        if (response.ok) {
-          const data = await response.json();
-          setLocations(data.locations || []);
-          setProducts(data.products || []);
-          setMovements(data.movements || []);
-        }
-      } catch (error) {
-        console.error('خطأ في تحميل البيانات:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    loadData();
-  }, []);
-
-  // ✅ دالة معالجة التحويل
-  const handleTransfer = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setMessage(null);
-
-    const formData = new FormData(e.currentTarget);
-    const result = await transferStockAction(formData);
-
-    if (result.success) {
-      setMessage({ type: 'success', text: '✅ تم تحويل المخزون بنجاح' });
-      // إعادة تحميل البيانات
-      try {
-        const response = await fetch('/api/stock-transfer-data');
-        if (response.ok) {
-          const data = await response.json();
-          setLocations(data.locations || []);
-          setProducts(data.products || []);
-          setMovements(data.movements || []);
-        }
-      } catch (error) {
-        console.error('خطأ في إعادة تحميل البيانات:', error);
-      }
-      e.currentTarget.reset();
-    } else {
-      setMessage({ type: 'error', text: result.error || '❌ فشل تحويل المخزون' });
+  // ✅ دالة تحميل البيانات (يمكن استدعاؤها مجدداً)
+const loadData = useCallback(async () => {
+  try {
+    const response = await fetch('/api/stock-transfer-data', {
+      cache: 'no-store', // ✅ منع التخزين المؤقت
+    });
+    if (response.ok) {
+      const data = await response.json();
+      setLocations(data.locations || []);
+      setProducts(data.products || []);
+      setMovements(data.movements || []);
     }
-    setIsSubmitting(false);
-  };
+  } catch (error) {
+    console.error('خطأ في تحميل البيانات:', error);
+  } finally {
+    setIsLoading(false);
+  }
+}, []);
+
+  // ✅ تحميل البيانات عند أول تحميل للصفحة
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+const handleTransfer = async (e: React.FormEvent<HTMLFormElement>) => {
+  e.preventDefault();
+  setIsSubmitting(true);
+  setMessage(null);
+
+  const formData = new FormData(e.currentTarget);
+  const result = await transferStockAction(formData);
+
+  if (result.success) {
+    // ✅ إضافة الحركة الجديدة إلى القائمة محلياً
+    const newMovement: Movement = {
+      id: Date.now().toString(), // معرف مؤقت (سيتم تحديثه عند إعادة الجلب)
+      quantity: parseFloat(formData.get('quantity') as string),
+      notes: (formData.get('notes') as string) || null,
+      created_at: new Date().toISOString(),
+      products: { name: products.find(p => p.id === formData.get('product_id'))?.name || 'غير معروف' },
+      from_locations: { name: locations.find(l => l.id === formData.get('from_location_id'))?.name || 'غير محدد' },
+      to_locations: { name: locations.find(l => l.id === formData.get('to_location_id'))?.name || 'غير محدد' },
+    };
+    setMovements(prev => [newMovement, ...prev]); // إضافة في البداية
+
+    // ✅ إعادة تحميل البيانات من الخادم للتحديث الدقيق (اختياري)
+    await loadData();
+
+    setMessage({ type: 'success', text: result.message || '✅ تم تحويل المخزون بنجاح' });
+    router.push('/dashboard/stock-transfer?success=true');
+  } else {
+    setMessage({ type: 'error', text: result.error || '❌ فشل تحويل المخزون' });
+  }
+  setIsSubmitting(false);
+};
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('ar-EG', {
@@ -121,7 +125,6 @@ export default function StockTransferPage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* نموذج التحويل */}
         <div className="lg:col-span-1">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 sticky top-6">
             <h2 className="text-xl font-bold text-gray-700 mb-4 flex items-center gap-2">
@@ -208,7 +211,6 @@ export default function StockTransferPage() {
           </div>
         </div>
 
-        {/* جدول سجل الحركات */}
         <div className="lg:col-span-2">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="p-6 border-b border-gray-200">

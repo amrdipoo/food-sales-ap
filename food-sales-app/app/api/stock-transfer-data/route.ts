@@ -10,28 +10,27 @@ export async function GET() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { cookies: { get: (name: string) => cookieStore.get(name)?.value } }
   );
-
-  // جلب المواقع (المخازن والسيارات)
+ revalidatePath('/dashboard/stock-transfer');
+  // جلب المواقع
   const { data: locations } = await supabase
     .from('locations')
     .select('id, name, type')
     .eq('is_active', true)
     .order('type', { ascending: true });
 
-  // جلب المنتجات النشطة
+  // جلب المنتجات
   const { data: products } = await supabase
     .from('products')
     .select('id, name, barcode')
     .eq('is_active', true)
     .order('name', { ascending: true });
 
-  // جلب آخر 10 حركات تحويل
+  // ✅ جلب آخر 10 حركات مع بيانات المنتجات والمواقع
   const { data: movements } = await supabase
     .from('stock_movements')
     .select(`
       id,
       quantity,
-      movement_type,
       notes,
       created_at,
       products (name),
