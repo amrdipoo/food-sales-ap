@@ -2,23 +2,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 import { getRepTrackingData } from '../../actions/trackingActions';
-
-// ✅ طريقة جديدة لإصلاح أيقونات Leaflet في Next.js
-const defaultIcon = new L.Icon({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-});
-
-L.Marker.prototype.options.icon = defaultIcon;
+import MapComponent from '../tracking-map';
 
 interface TrackingPoint {
   id: string;
@@ -99,40 +84,19 @@ export default function TrackingPage() {
         </div>
 
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-          <div className="h-[600px] w-full rounded-lg overflow-hidden border border-gray-300">
-            <MapContainer center={center} zoom={12} style={{ height: '100%', width: '100%' }}>
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
-              {trackingData.map((point) => (
-                <Marker key={point.id} position={[point.latitude, point.longitude]}>
-                  <Popup>
-                    <div className="text-sm">
-                      <p><strong>المندوب:</strong> {point.user?.full_name || 'غير معروف'}</p>
-                      <p><strong>النوع:</strong> {point.action_type === 'checkin' ? '✅ تسجيل دخول' : '📍 تحديث موقع'}</p>
-                      <p><strong>الدقة:</strong> {point.accuracy} م</p>
-                      <p><strong>الوقت:</strong> {new Date(point.created_at).toLocaleString('ar-EG')}</p>
-                    </div>
-                  </Popup>
-                </Marker>
-              ))}
-              {trackingData.length > 1 && (
-                <Polyline
-                  positions={trackingData.map(p => [p.latitude, p.longitude])}
-                  color="blue"
-                  weight={3}
-                  opacity={0.7}
-                />
-              )}
-            </MapContainer>
-          </div>
+          <MapComponent
+            points={trackingData}
+            center={center}
+            zoom={15}
+          />
         </div>
 
         {trackingData.length === 0 && (
           <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg text-center">
             <p className="text-yellow-800">⚠️ لا توجد نقاط تتبع مسجلة حتى الآن.</p>
-            <p className="text-yellow-600 text-sm mt-1">سيتم عرض نقاط تتبع المندوبين عند تسجيلها.</p>
+            <p className="text-yellow-600 text-sm mt-1">
+              سيتم عرض نقاط تتبع المندوبين عند تسجيلها.
+            </p>
           </div>
         )}
       </div>
