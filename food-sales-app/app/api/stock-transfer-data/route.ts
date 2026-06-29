@@ -2,6 +2,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache'; // ✅ إضافة هذا السطر
 
 export async function GET() {
   const cookieStore = await cookies();
@@ -10,7 +11,10 @@ export async function GET() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { cookies: { get: (name: string) => cookieStore.get(name)?.value } }
   );
- revalidatePath('/dashboard/stock-transfer');
+
+  // ✅ تحديث مسار تخزين التحويلات
+  revalidatePath('/dashboard/stock-transfer');
+
   // جلب المواقع
   const { data: locations } = await supabase
     .from('locations')
@@ -18,14 +22,14 @@ export async function GET() {
     .eq('is_active', true)
     .order('type', { ascending: true });
 
-  // جلب المنتجات
+  // جلب المنتجات النشطة
   const { data: products } = await supabase
     .from('products')
     .select('id, name, barcode')
     .eq('is_active', true)
     .order('name', { ascending: true });
 
-  // ✅ جلب آخر 10 حركات مع بيانات المنتجات والمواقع
+  // جلب آخر 10 حركات تحويل
   const { data: movements } = await supabase
     .from('stock_movements')
     .select(`
